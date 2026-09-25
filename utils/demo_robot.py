@@ -1,14 +1,22 @@
+import math
 import pybullet as p
 
 
 class DemoRobot:
     def __init__(self, x=0, y=0):
 
+        # ------------------------------------------------------------
+        # Robot dimensions
+        # ------------------------------------------------------------
+
         body_length = 1.2
         body_width = 0.8
         body_height = 0.3
+
         wheel_radius = 0.15
-        wheel_width = 0.1
+        wheel_width = 0.10
+
+        caster_radius = 0.06
 
         # ------------------------------------------------------------
         # Chassis
@@ -34,63 +42,137 @@ class DemoRobot:
         )
 
         # ------------------------------------------------------------
-        # Wheels
+        # Drive wheels
         # ------------------------------------------------------------
+        #
+        # PyBullet cylinders are created along the Z axis.
+        # Rotate their geometry 90 degrees around X so that
+        # the wheel axle lies along the Y axis.
+        # ------------------------------------------------------------
+
+        wheel_orientation = p.getQuaternionFromEuler(
+            [math.pi / 2, 0, 0]
+        )
 
         wheel_collision = p.createCollisionShape(
             p.GEOM_CYLINDER,
             radius=wheel_radius,
-            height=wheel_width
+            height=wheel_width,
+            collisionFrameOrientation=wheel_orientation
         )
 
         wheel_visual = p.createVisualShape(
             p.GEOM_CYLINDER,
             radius=wheel_radius,
             length=wheel_width,
-            rgbaColor=[0.3, 0.3, 0.3, 1.0]
+            visualFrameOrientation=wheel_orientation,
+            rgbaColor=[0.12, 0.12, 0.12, 1.0]
         )
 
-        wheel_positions = [
-            [
-                body_length / 3,
-                body_width / 2 + wheel_width / 2,
-                -wheel_width / 2
-            ],  # Front right
+        # ------------------------------------------------------------
+        # Passive caster supports
+        # ------------------------------------------------------------
 
-            [
-                body_length / 3,
-                -body_width / 2 - wheel_width / 2,
-                -wheel_width / 2
-            ],  # Front left
+        caster_collision = p.createCollisionShape(
+            p.GEOM_SPHERE,
+            radius=caster_radius
+        )
 
-            [
-                -body_length / 3,
-                body_width / 2 + wheel_width / 2,
-                -wheel_width / 2
-            ],  # Rear right
+        caster_visual = p.createVisualShape(
+            p.GEOM_SPHERE,
+            radius=caster_radius,
+            rgbaColor=[0.25, 0.25, 0.25, 1.0]
+        )
 
-            [
-                -body_length / 3,
-                -body_width / 2 - wheel_width / 2,
-                -wheel_width / 2
-            ]   # Rear left
+        # ------------------------------------------------------------
+        # Link positions
+        # ------------------------------------------------------------
+        #
+        # Robot coordinate convention:
+        #
+        #     +X = forward
+        #     +Y = left
+        #     -Y = right
+        #
+        # Drive wheels are located at x = 0.
+        # ------------------------------------------------------------
+
+        left_wheel_position = [
+            0,
+            body_width / 2 + wheel_width / 2,
+            -body_height / 2
+        ]
+
+        right_wheel_position = [
+            0,
+            -body_width / 2 - wheel_width / 2,
+            -body_height / 2
+        ]
+
+        # Caster centers must be lower than the chassis so that
+        # they touch the ground.
+        caster_z = (
+            caster_radius
+            - (wheel_radius + body_height / 2)
+        )
+
+        front_caster_position = [
+            body_length * 0.40,
+            0,
+            caster_z
+        ]
+
+        rear_caster_position = [
+            -body_length * 0.40,
+            0,
+            caster_z
+        ]
+
+        # Link order:
+        #
+        # 0 -> left drive wheel
+        # 1 -> right drive wheel
+        # 2 -> front caster
+        # 3 -> rear caster
+
+        link_positions = [
+            left_wheel_position,
+            right_wheel_position,
+            front_caster_position,
+            rear_caster_position
         ]
 
         # ------------------------------------------------------------
         # Multi-body configuration
         # ------------------------------------------------------------
 
-        link_masses = [2.0] * 4
+        link_masses = [
+            2.0,   # left wheel
+            2.0,   # right wheel
+            0.2,   # front caster
+            0.2    # rear caster
+        ]
 
-        link_collision_shapes = [wheel_collision] * 4
-        link_visual_shapes = [wheel_visual] * 4
+        link_collision_shapes = [
+            wheel_collision,
+            wheel_collision,
+            caster_collision,
+            caster_collision
+        ]
 
-        link_positions = wheel_positions
+        link_visual_shapes = [
+            wheel_visual,
+            wheel_visual,
+            caster_visual,
+            caster_visual
+        ]
 
-        # Original orientation from the provided template
         link_orientations = [
-            p.getQuaternionFromEuler([1.57, 0, 0])
-        ] * 4
+            [0, 0, 0, 1],
+            [0, 0, 0, 1],
+            [0, 0, 0, 1],
+            [0, 0, 0, 1]
+        ]
 
         link_inertial_frame_positions = [
             [0, 0, 0]
@@ -102,14 +184,23 @@ class DemoRobot:
 
         link_parent_indices = [0] * 4
 
+        # Two powered revolute wheels.
+        # Casters are passive fixed supports.
         link_joint_types = [
-            p.JOINT_REVOLUTE
-        ] * 4
+            p.JOINT_REVOLUTE,
+            p.JOINT_REVOLUTE,
+            p.JOINT_FIXED,
+            p.JOINT_FIXED
+        ]
 
-        # Original joint axis from the provided template
+        # Drive-wheel rotation axis = Y
+        # Fixed joints ignore their axis.
         link_joint_axis = [
+            [0, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
             [0, 0, 1]
-        ] * 4
+        ]
 
         # ------------------------------------------------------------
         # Create robot
@@ -145,25 +236,26 @@ class DemoRobot:
         )
 
         # ------------------------------------------------------------
-        # Wheel joints
+        # Joint IDs
         # ------------------------------------------------------------
 
-        self.num_joints = p.getNumJoints(self.agv_id)
+        self.left_wheel = 0
+        self.right_wheel = 1
 
-        self.wheel_joints = list(
-            range(self.num_joints)
-        )
+        self.drive_wheels = [
+            self.left_wheel,
+            self.right_wheel
+        ]
 
-        # Original wheel grouping
-        self.right_wheels = [0, 2]
-        self.left_wheels = [1, 3]
+        self.casters = [2, 3]
 
         # ------------------------------------------------------------
-        # Wheel dynamics
+        # Drive wheel dynamics
         # ------------------------------------------------------------
 
-        for joint_id in self.wheel_joints:
+        for joint_id in self.drive_wheels:
 
+            # Disable default joint motor.
             p.setJointMotorControl2(
                 bodyUniqueId=self.agv_id,
                 jointIndex=joint_id,
@@ -175,9 +267,28 @@ class DemoRobot:
             p.changeDynamics(
                 self.agv_id,
                 joint_id,
-                lateralFriction=0.5,
+                lateralFriction=1.0,
                 rollingFriction=0.001,
                 spinningFriction=0.001
+            )
+
+        # ------------------------------------------------------------
+        # Caster dynamics
+        # ------------------------------------------------------------
+        #
+        # The casters are simplified passive supports.
+        # Very low friction allows them to slide when the
+        # differential drive rotates the robot.
+        # ------------------------------------------------------------
+
+        for caster_id in self.casters:
+
+            p.changeDynamics(
+                self.agv_id,
+                caster_id,
+                lateralFriction=0.05,
+                rollingFriction=0.0,
+                spinningFriction=0.0
             )
 
         # ------------------------------------------------------------
@@ -189,17 +300,21 @@ class DemoRobot:
 
         self.drive_speed = 6.0
         self.turn_speed = 3.0
+
         self.motor_force = 20.0
 
+    # ----------------------------------------------------------------
+    # Manual control
+    # ----------------------------------------------------------------
 
     def user_control(self, keys):
         """
-        Manual control.
+        Manual control used to test/calibrate the Lab 2 robot.
 
         W = forward
         S = backward
-        A = turn counter-clockwise / left
-        D = turn clockwise / right
+        A = counter-clockwise / left
+        D = clockwise / right
         """
 
         linear = 0.0
@@ -219,52 +334,50 @@ class DemoRobot:
         ):
             linear -= 1.0
 
-        # Turn left / counter-clockwise
+        # Left / counter-clockwise
         if (
             ord('a') in keys
             and keys[ord('a')] & p.KEY_IS_DOWN
         ):
-            angular -= 1.0
+            angular += 1.0
 
-        # Turn right / clockwise
+        # Right / clockwise
         if (
             ord('d') in keys
             and keys[ord('d')] & p.KEY_IS_DOWN
         ):
-            angular += 1.0
+            angular -= 1.0
 
-        # Negative linear velocity is necessary because of the
-        # wheel orientation used in the original template.
+        # Differential-drive equations
         self.left_speed = (
-            -linear * self.drive_speed
-            + angular * self.turn_speed
-        )
-
-        self.right_speed = (
-            -linear * self.drive_speed
+            linear * self.drive_speed
             - angular * self.turn_speed
         )
 
+        self.right_speed = (
+            linear * self.drive_speed
+            + angular * self.turn_speed
+        )
+
+    # ----------------------------------------------------------------
+    # Apply motor commands
+    # ----------------------------------------------------------------
 
     def step_action(self):
-        """Apply desired wheel speeds."""
+        """Apply desired speeds to the two drive wheels."""
 
-        for joint_id in self.left_wheels:
+        p.setJointMotorControl2(
+            bodyUniqueId=self.agv_id,
+            jointIndex=self.left_wheel,
+            controlMode=p.VELOCITY_CONTROL,
+            targetVelocity=self.left_speed,
+            force=self.motor_force
+        )
 
-            p.setJointMotorControl2(
-                bodyUniqueId=self.agv_id,
-                jointIndex=joint_id,
-                controlMode=p.VELOCITY_CONTROL,
-                targetVelocity=self.left_speed,
-                force=self.motor_force
-            )
-
-        for joint_id in self.right_wheels:
-
-            p.setJointMotorControl2(
-                bodyUniqueId=self.agv_id,
-                jointIndex=joint_id,
-                controlMode=p.VELOCITY_CONTROL,
-                targetVelocity=self.right_speed,
-                force=self.motor_force
-            )
+        p.setJointMotorControl2(
+            bodyUniqueId=self.agv_id,
+            jointIndex=self.right_wheel,
+            controlMode=p.VELOCITY_CONTROL,
+            targetVelocity=self.right_speed,
+            force=self.motor_force
+        )
