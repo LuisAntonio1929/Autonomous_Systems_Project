@@ -44,7 +44,7 @@ class BaseWorld:
 
         p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)  # Enable GUI panels
         p.configureDebugVisualizer(p.COV_ENABLE_MOUSE_PICKING, 1)
-        p.configureDebugVisualizer(p.COV_ENABLE_KEYBOARD_SHORTCUTS, 1)  # Enable keyboard shortcuts
+        p.configureDebugVisualizer(p.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)  # Enable keyboard shortcuts
 
         # Load a plane (ground)
         self.planeId = p.loadURDF("plane.urdf")
@@ -58,6 +58,9 @@ class BaseWorld:
         self.step_callbacks=[]
 
         self.additional_key_callbacks=[]
+
+        # Body that the camera should follow
+        self.camera_follow_body = None
 
         p.resetDebugVisualizerCamera(
             cameraDistance=3,
@@ -106,60 +109,127 @@ class BaseWorld:
             row+=1
 
     def texture_walls(self):
-        texture_id = p.loadTexture("textures/silly.png")
+        texture_id = p.loadTexture("textures/rock.png")
         for cube_id in self.cuboids:
             # Apply the texture
             p.changeVisualShape(cube_id, -1, textureUniqueId=texture_id)
 
     def camera_movement(self):
         keys = p.getKeyboardEvents()
+
         cam_info = p.getDebugVisualizerCamera()
-        yaw = cam_info[8]      # Horizontal rotation (degrees)
-        pitch = cam_info[9]    # Vertical rotation (degrees)
-        
-        cameraPosition = list(cam_info[11])   # get current target, since we expect to move it
-        
-        moved=False
 
-        if p.B3G_UP_ARROW in keys and keys[p.B3G_UP_ARROW] & p.KEY_IS_DOWN:
-            forward=get_forward_vector(yaw,pitch)
-            cameraPosition[0] += forward[0] * self.move_speed
-            cameraPosition[1] += forward[1] * self.move_speed
-            cameraPosition[2] += forward[2] * self.move_speed
-            moved = True
-            
-        # DOWN ARROW - Move backward (same as S)
-        if p.B3G_DOWN_ARROW in keys and keys[p.B3G_DOWN_ARROW] & p.KEY_IS_DOWN:
-            forward=get_forward_vector(yaw,pitch)
-            cameraPosition[0] -= forward[0] * self.move_speed
-            cameraPosition[1] -= forward[1] * self.move_speed
-            cameraPosition[2] -= forward[2] * self.move_speed
-            moved = True
-            
-        # LEFT ARROW - Strafe left (same as A)
-        if p.B3G_LEFT_ARROW in keys and keys[p.B3G_LEFT_ARROW] & p.KEY_IS_DOWN:
-            right=get_right_vector(yaw,pitch)
-            cameraPosition[0] -= right[0] * self.move_speed
-            cameraPosition[1] -= right[1] * self.move_speed
-            moved = True
-            
-        # RIGHT ARROW - Strafe right (same as D)
-        if p.B3G_RIGHT_ARROW in keys and keys[p.B3G_RIGHT_ARROW] & p.KEY_IS_DOWN:
-            right=get_right_vector(yaw,pitch)
-            cameraPosition[0] += right[0] * self.move_speed
-            cameraPosition[1] += right[1] * self.move_speed
-            moved = True
+        yaw = cam_info[8]          # Horizontal rotation (degrees)
+        pitch = cam_info[9]        # Vertical rotation (degrees)
+        distance = cam_info[10]    # Current camera distance
 
-        if moved:
-            p.resetDebugVisualizerCamera(
-                cameraDistance=0.01,
-                cameraYaw=yaw,
-                cameraPitch=pitch, 
-                cameraTargetPosition=cameraPosition
+        # ------------------------------------------------------------
+        # FOLLOW ROBOT MODE - THIRD PERSON CAMERA
+        # ------------------------------------------------------------
+        if self.camera_follow_body is not None:
+
+            # Get robot position and orientation
+            position, orientation = p.getBasePositionAndOrientation(
+                self.camera_follow_body
             )
-        
-        for i in self.additional_key_callbacks:
-            i(keys)
+
+            # Convert quaternion orientation to Euler angles
+            roll, pitch_robot, yaw_robot = p.getEulerFromQuaternion(
+                orientation
+            )
+
+            # PyBullet returns yaw in radians.
+            # resetDebugVisualizerCamera expects degrees.
+            robot_yaw_deg = math.degrees(yaw_robot)
+
+            # PyBullet's camera yaw convention has a 90-degree offset
+            # relative to the robot's +X forward direction.
+            camera_yaw = robot_yaw_deg - 90
+
+            # Third-person camera behind and slightly above the robot
+            p.resetDebugVisualizerCamera(
+                cameraDistance=3.0,
+                cameraYaw=camera_yaw,
+                cameraPitch=-25,
+                cameraTargetPosition=[
+                    position[0],
+                    position[1],
+                    position[2] + 0.2
+                ]
+            )
+
+        # ------------------------------------------------------------
+        # NORMAL CAMERA MOVEMENT
+        # ------------------------------------------------------------
+        else:
+
+            cameraPosition = list(cam_info[11])
+
+            moved = False
+
+            # UP ARROW - Move forward
+            if (
+                p.B3G_UP_ARROW in keys
+                and keys[p.B3G_UP_ARROW] & p.KEY_IS_DOWN
+            ):
+                forward = get_forward_vector(yaw, pitch)
+
+                cameraPosition[0] += forward[0] * self.move_speed
+                cameraPosition[1] += forward[1] * self.move_speed
+                cameraPosition[2] += forward[2] * self.move_speed
+
+                moved = True
+
+            # DOWN ARROW - Move backward
+            if (
+                p.B3G_DOWN_ARROW in keys
+                and keys[p.B3G_DOWN_ARROW] & p.KEY_IS_DOWN
+            ):
+                forward = get_forward_vector(yaw, pitch)
+
+                cameraPosition[0] -= forward[0] * self.move_speed
+                cameraPosition[1] -= forward[1] * self.move_speed
+                cameraPosition[2] -= forward[2] * self.move_speed
+
+                moved = True
+
+            # LEFT ARROW - Strafe left
+            if (
+                p.B3G_LEFT_ARROW in keys
+                and keys[p.B3G_LEFT_ARROW] & p.KEY_IS_DOWN
+            ):
+                right = get_right_vector(yaw, pitch)
+
+                cameraPosition[0] -= right[0] * self.move_speed
+                cameraPosition[1] -= right[1] * self.move_speed
+
+                moved = True
+
+            # RIGHT ARROW - Strafe right
+            if (
+                p.B3G_RIGHT_ARROW in keys
+                and keys[p.B3G_RIGHT_ARROW] & p.KEY_IS_DOWN
+            ):
+                right = get_right_vector(yaw, pitch)
+
+                cameraPosition[0] += right[0] * self.move_speed
+                cameraPosition[1] += right[1] * self.move_speed
+
+                moved = True
+
+            if moved:
+                p.resetDebugVisualizerCamera(
+                    cameraDistance=distance,
+                    cameraYaw=yaw,
+                    cameraPitch=pitch,
+                    cameraTargetPosition=cameraPosition
+                )
+
+        # ------------------------------------------------------------
+        # Additional keyboard callbacks
+        # ------------------------------------------------------------
+        for callback in self.additional_key_callbacks:
+            callback(keys)
 
     def simStep(self):
         for i in self.step_callbacks:
@@ -172,3 +242,7 @@ class BaseWorld:
     def end(self):
         self.client.disconnect()
         p.disconnect()
+
+    def follow_camera(self, body_id):
+        """Make the debug camera follow a PyBullet body."""
+        self.camera_follow_body = body_id
