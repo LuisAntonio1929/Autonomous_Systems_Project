@@ -303,6 +303,29 @@ class DemoRobot:
 
         self.motor_force = 20.0
 
+        # ------------------------------------------------------------
+        # Autonomous route
+        # ------------------------------------------------------------
+
+        self.route = [
+            ("forward", 240*13.5),
+            ("stop", 240 * 0.5),
+            ("left", 240*1.84),
+            ("stop", 240 * 0.5),
+            ("forward", 240*3.5),
+            ("stop", 240 * 0.5),
+            ("left", 240*1.84),
+            ("stop", 240 * 0.5),
+            ("forward", 240*6.5),
+            ("stop", 240 * 0.5),
+            ("right", 240*1.84),
+            ("stop", 240 * 0.5),
+            ("forward", 240*3.5)
+        ]
+
+        self.current_action_index = 0
+        self.action_step = 0
+
     # ----------------------------------------------------------------
     # Manual control
     # ----------------------------------------------------------------
@@ -364,7 +387,36 @@ class DemoRobot:
     # ----------------------------------------------------------------
 
     def step_action(self):
-        """Apply desired speeds to the two drive wheels."""
+
+        if self.current_action_index < len(self.route):
+
+            action, duration = self.route[self.current_action_index]
+
+            if action == "forward":
+                self.left_speed = self.drive_speed
+                self.right_speed = self.drive_speed
+
+            elif action == "left":
+                self.left_speed = -self.turn_speed
+                self.right_speed = self.turn_speed
+
+            elif action == "right":
+                self.left_speed = self.turn_speed
+                self.right_speed = -self.turn_speed
+
+            elif action == "stop":
+                self.left_speed = 0.0
+                self.right_speed = 0.0
+
+            self.action_step += 1
+
+            if self.action_step >= duration:
+                self.current_action_index += 1
+                self.action_step = 0
+
+        else:
+            self.left_speed = 0.0
+            self.right_speed = 0.0
 
         p.setJointMotorControl2(
             bodyUniqueId=self.agv_id,
