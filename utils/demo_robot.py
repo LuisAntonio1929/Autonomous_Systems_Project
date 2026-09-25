@@ -1,4 +1,5 @@
 import math
+import random
 import pybullet as p
 
 
@@ -303,6 +304,10 @@ class DemoRobot:
 
         self.motor_force = 20.0
 
+        # Motor noise level
+        # 0.05 means ±5 %
+        self.motor_noise_level = 0.05
+
         # ------------------------------------------------------------
         # Autonomous route
         # ------------------------------------------------------------
@@ -418,11 +423,14 @@ class DemoRobot:
             self.left_speed = 0.0
             self.right_speed = 0.0
 
+        left_command = self.motor_noise(self.left_speed)
+        right_command = self.motor_noise(self.right_speed)
+
         p.setJointMotorControl2(
             bodyUniqueId=self.agv_id,
             jointIndex=self.left_wheel,
             controlMode=p.VELOCITY_CONTROL,
-            targetVelocity=self.left_speed,
+            targetVelocity=left_command,
             force=self.motor_force
         )
 
@@ -430,6 +438,16 @@ class DemoRobot:
             bodyUniqueId=self.agv_id,
             jointIndex=self.right_wheel,
             controlMode=p.VELOCITY_CONTROL,
-            targetVelocity=self.right_speed,
+            targetVelocity=right_command,
             force=self.motor_force
         )
+
+    def motor_noise(self, speed):
+        """Apply independent multiplicative noise to a motor command."""
+
+        noise_factor = random.uniform(
+            1.0 - self.motor_noise_level,
+            1.0 + self.motor_noise_level
+        )
+
+        return speed * noise_factor
