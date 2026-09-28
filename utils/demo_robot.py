@@ -288,7 +288,7 @@ class DemoRobot:
             p.changeDynamics(
                 self.agv_id,
                 caster_id,
-                lateralFriction=0.05,
+                lateralFriction=0.0,
                 rollingFriction=0.0,
                 spinningFriction=0.0
             )
@@ -303,30 +303,30 @@ class DemoRobot:
         self.drive_speed = 6.0
         self.turn_speed = 3.0
 
-        self.motor_force = 20.0
+        self.motor_force = 100.0
 
         # Motor noise level
-        # 0.05 means ±5 %
-        self.motor_noise_level = 0.05
+        # 0.01 means ±1 %
+        self.motor_noise_level = 0.01
 
         # ------------------------------------------------------------
         # Autonomous route
         # ------------------------------------------------------------
 
         self.route = [
-            ("forward", 240*13.5),
+            ("forward", 240*27.6),
             ("stop", 240 * 0.5),
-            ("left", 240*1.84),
-            ("stop", 240 * 0.5),
-            ("forward", 240*3.5),
-            ("stop", 240 * 0.5),
-            ("left", 240*1.84),
+            ("left", 240*1.60),
             ("stop", 240 * 0.5),
             ("forward", 240*6.5),
             ("stop", 240 * 0.5),
-            ("right", 240*1.84),
+            ("left", 240*1.60),
             ("stop", 240 * 0.5),
-            ("forward", 240*3.5)
+            ("forward", 240*13.5),
+            ("stop", 240 * 0.5),
+            ("right", 240*1.60),
+            ("stop", 240 * 0.5),
+            ("forward", 240*2)
         ]
 
         self.current_action_index = 0
@@ -346,7 +346,13 @@ class DemoRobot:
         # Distance at which the robot should stop
         self.safety_distance = 1.5
 
-        self.person_id = None
+        # ------------------------------------------------------------
+        # Person detection
+        # ------------------------------------------------------------
+
+        # Store the PyBullet IDs of every person that the robot
+        # should recognise as a dynamic obstacle.
+        self.person_ids = set()
 
     # ----------------------------------------------------------------
     # Manual control
@@ -571,21 +577,47 @@ class DemoRobot:
             angles
         )
 
-    def set_person_target(self, person_id):
-        """Store the PyBullet body ID of the person to detect."""
-        self.person_id = person_id
+    def set_person_targets(self, person_ids):
+        """
+        Register multiple people as dynamic obstacles.
+
+        person_ids should contain the PyBullet object IDs
+        corresponding to every person that the LiDAR should detect.
+        """
+        self.person_ids = set(person_ids)
 
     def person_detected(self):
-        """Return True when the person is detected inside the safety distance."""
+        """
+        Return True if any registered person is detected
+        within the safety distance.
+        """
 
-        if self.person_id is None:
+        # If no people have been registered, there is
+        # nothing for the robot to detect.
+        if not self.person_ids:
             return False
 
+        # Perform the LiDAR scan.
         distances, hit_ids, angles = self.ray_cast_lidar()
 
-        person_hits = (
-            (hit_ids == self.person_id)
+        # Check whether each LiDAR hit corresponds to
+        # any of the registered people.
+        person_hits = np.isin(
+            hit_ids,
+            list(self.person_ids)
+        )
+
+        # A person only counts as an obstacle when they
+        # are also inside the safety distance.
+        close_person_hits = (
+            person_hits
             & (distances <= self.safety_distance)
         )
 
-        return np.any(person_hits)
+        return np.any(close_person_hits)
+
+    def add_person_target(self, person_id):
+        """
+        Add one person to the existing set of dynamic obstacles.
+        """
+        self.person_ids.add(person_id)
