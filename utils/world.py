@@ -60,13 +60,29 @@ class BaseWorld:
         self.additional_key_callbacks=[]
 
         # Body that the camera should follow
+        # ------------------------------------------------------------
+        # Camera settings
+        # ------------------------------------------------------------
+
+        # Body that the follow camera should track.
         self.camera_follow_body = None
 
+        # The simulation always starts using the global overview camera.
+        # Available modes:
+        #   "overview" -> top-down view of the complete map
+        #   "follow"   -> third-person camera following the robot
+        self.camera_mode = "overview"
+
+        # These values will be updated automatically when a map is loaded.
+        self.map_center = [0, 0, 0]
+        self.overview_distance = 30
+
+        # Initial camera before the map dimensions are known.
         p.resetDebugVisualizerCamera(
-            cameraDistance=3,
+            cameraDistance=self.overview_distance,
             cameraYaw=0,
-            cameraPitch=-30,
-            cameraTargetPosition=[0, 0, 8]
+            cameraPitch=-89.9,
+            cameraTargetPosition=self.map_center
         )
 
     def add_keyboard_callback(self,x):
@@ -93,20 +109,67 @@ class BaseWorld:
             self.cuboids.append(wall_id)
         return wall_id
 
-    def map_from_file(self,fname,unitwidth=1.0):
-        xs=open(fname,"r").read().strip()
-        row=0
-        for l in xs.split("\n"):
-            col=0
+    def map_from_file(self, fname, unitwidth=1.0):
+        xs = open(fname, "r").read().strip()
+
+        # ------------------------------------------------------------
+        # Store map dimensions for the overview camera
+        # ------------------------------------------------------------
+        lines = xs.split("\n")
+
+        self.map_rows = len(lines)
+        self.map_cols = max(len(line.strip()) for line in lines)
+
+        map_width = self.map_cols * unitwidth
+        map_height = self.map_rows * unitwidth
+
+        # Center of the complete map.
+        self.map_center = [
+            map_width / 2,
+            map_height / 2,
+            0
+        ]
+
+        # Camera distance is calculated from the largest map dimension
+        # so that the complete maze can be seen from above.
+        self.overview_distance = max(
+            map_width,
+            map_height
+        ) * 0.65
+
+        # ------------------------------------------------------------
+        # Create map objects
+        # ------------------------------------------------------------
+        row = 0
+
+        for l in lines:
+            col = 0
+
             for c in l.strip():
-                y=row*unitwidth+unitwidth/2
-                x=col*unitwidth+unitwidth/2
-                if c=="1":
-                    self.add_cuboid((unitwidth/2,unitwidth/2,unitwidth/2),(x,y,unitwidth/2),[0.7,0.7,0.7])
-                if c=="2":
-                    self.add_cuboid((unitwidth/2,unitwidth/2,unitwidth/2),(x,y,unitwidth/2),[0.7,0.7,0.7],mass=0.5)
-                col+=1
-            row+=1
+                y = row * unitwidth + unitwidth / 2
+                x = col * unitwidth + unitwidth / 2
+
+                if c == "1":
+                    self.add_cuboid(
+                        (unitwidth / 2, unitwidth / 2, unitwidth / 2),
+                        (x, y, unitwidth / 2),
+                        [0.7, 0.7, 0.7]
+                    )
+
+                if c == "2":
+                    self.add_cuboid(
+                        (unitwidth / 2, unitwidth / 2, unitwidth / 2),
+                        (x, y, unitwidth / 2),
+                        [0.7, 0.7, 0.7],
+                        mass=0.5
+                    )
+
+                col += 1
+
+            row += 1
+
+        # Start every simulation using the global panoramic view.
+        self.set_overview_camera()
 
     def texture_walls(self):
         texture_id = p.loadTexture("textures/rock.png")
@@ -114,8 +177,54 @@ class BaseWorld:
             # Apply the texture
             p.changeVisualShape(cube_id, -1, textureUniqueId=texture_id)
 
+    def set_overview_camera(self):
+        """Show the complete map using a top-down panoramic camera."""
+
+        p.resetDebugVisualizerCamera(
+            cameraDistance=self.overview_distance,
+            cameraYaw=0,
+            cameraPitch=-89.9,
+            cameraTargetPosition=self.map_center
+        )
+
     def camera_movement(self):
         keys = p.getKeyboardEvents()
+
+        # ------------------------------------------------------------
+        # CAMERA MODE TOGGLE
+        # ------------------------------------------------------------
+        # Press C once to switch between:
+        #
+        #   Overview camera <-> Robot follow camera
+        #
+        # KEY_WAS_TRIGGERED means that holding C down will not
+        # repeatedly change the camera every simulation step.
+        c_pressed = (
+            (
+                ord("c") in keys
+                and keys[ord("c")] & p.KEY_WAS_TRIGGERED
+            )
+            or
+            (
+                ord("C") in keys
+                and keys[ord("C")] & p.KEY_WAS_TRIGGERED
+            )
+        )
+
+        if c_pressed:
+
+            if self.camera_mode == "overview":
+
+                # Switch to the robot-follow camera only if a target
+                # robot has already been registered.
+                if self.camera_follow_body is not None:
+                    self.camera_mode = "follow"
+
+            else:
+
+                # Return to the global panoramic camera.
+                self.camera_mode = "overview"
+                self.set_overview_camera()
 
         cam_info = p.getDebugVisualizerCamera()
 
@@ -126,7 +235,10 @@ class BaseWorld:
         # ------------------------------------------------------------
         # FOLLOW ROBOT MODE - THIRD PERSON CAMERA
         # ------------------------------------------------------------
-        if self.camera_follow_body is not None:
+        if (
+            self.camera_mode == "follow"
+            and self.camera_follow_body is not None
+        ):
 
             # Get robot position and orientation
             position, orientation = p.getBasePositionAndOrientation(
@@ -159,7 +271,7 @@ class BaseWorld:
             )
 
         # ------------------------------------------------------------
-        # NORMAL CAMERA MOVEMENT
+        # OVERVIEW CAMERA MODE
         # ------------------------------------------------------------
         else:
 
