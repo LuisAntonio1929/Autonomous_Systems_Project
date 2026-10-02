@@ -54,7 +54,7 @@ class BaseWorld:
         # Load a plane (ground)
         self.planeId = p.loadURDF("plane.urdf")
         p.changeDynamics(self.planeId , -1, lateralFriction=1.0)
-        self.simulation_speed = 10.0
+        self.simulation_speed = 20.0
         
         self.move_speed=0.02
 

@@ -88,7 +88,7 @@ wld.texture_walls()
 
 # This position works correctly with the new Lab 3 map.
 r = R.DemoRobot(x=3, y=5)
-r.set_control_mode("autonomous")
+r.set_control_mode("manual")
 # make the camera follow the robot
 wld.follow_camera(r.agv_id)
 
@@ -112,7 +112,7 @@ odom.reset(
     theta=0.0
 )
 
-INCLUDE_PEOPLE = True
+INCLUDE_PEOPLE = False  # Set to True to include moving people in the simulation.
 PRINT_DATA = False
 
 if INCLUDE_PEOPLE:
