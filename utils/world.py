@@ -42,14 +42,19 @@ class BaseWorld:
         # Set gravity
         p.setGravity(0, 0, -9.81)
 
-        p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)  # Enable GUI panels
+        p.configureDebugVisualizer(p.COV_ENABLE_RGB_BUFFER_PREVIEW, 0)
+        p.configureDebugVisualizer(p.COV_ENABLE_DEPTH_BUFFER_PREVIEW,0)
+        p.configureDebugVisualizer(p.COV_ENABLE_SEGMENTATION_MARK_PREVIEW,0)
+        p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+
+        #p.configureDebugVisualizer(p.COV_ENABLE_GUI, 1)  # Enable GUI panels
         p.configureDebugVisualizer(p.COV_ENABLE_MOUSE_PICKING, 1)
         p.configureDebugVisualizer(p.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)  # Enable keyboard shortcuts
 
         # Load a plane (ground)
         self.planeId = p.loadURDF("plane.urdf")
         p.changeDynamics(self.planeId , -1, lateralFriction=1.0)
-        
+        self.simulation_speed = 10.0
         
         self.move_speed=0.02
 
@@ -135,7 +140,7 @@ class BaseWorld:
         self.overview_distance = max(
             map_width,
             map_height
-        ) * 0.65
+        ) * 0.45
 
         # ------------------------------------------------------------
         # Create map objects
@@ -349,11 +354,19 @@ class BaseWorld:
         self.camera_movement()
         p.stepSimulation()
                 
-        time.sleep(1./240.)  # 240 Hz
+        time.sleep(1./(240.0*self.simulation_speed))  # 240 Hz
 
     def end(self):
-        self.client.disconnect()
-        p.disconnect()
+        """
+        Close the PyBullet simulation safely.
+        """
+
+        if p.isConnected(
+            self.client
+        ):
+            p.disconnect(
+                self.client
+            )
 
     def follow_camera(self, body_id):
         """Make the debug camera follow a PyBullet body."""

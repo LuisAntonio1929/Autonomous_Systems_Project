@@ -133,8 +133,8 @@ class DifferentialDriveOdometry:
             delta_x = radius * (np.sin(self.theta + delta_theta) - np.sin(self.theta))
             delta_y = -radius * (np.cos(self.theta + delta_theta) - np.cos(self.theta))
         
-        self.x -= delta_x         # so I have kind of mucked something up in the coordinate system, and I have made this negative due to the rotations, I think it is easiest. 
-        self.y -= delta_y
+        self.x += delta_x         # so I have kind of mucked something up in the coordinate system, and I have made this negative due to the rotations, I think it is easiest. 
+        self.y += delta_y
         self.theta += delta_theta
         
         # Normalize theta to [-pi, pi]

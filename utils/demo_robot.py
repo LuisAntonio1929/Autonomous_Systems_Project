@@ -237,6 +237,17 @@ class DemoRobot:
             linkJointAxis=link_joint_axis
         )
 
+        p.changeVisualShape(
+            objectUniqueId=self.agv_id,
+            linkIndex=-1,
+            rgbaColor=[
+                0.10,   # Red
+                0.75,   # Green
+                0.20,   # Blue
+                1.00    # Alpha
+            ]
+        )
+
         # ------------------------------------------------------------
         # Joint IDs
         # ------------------------------------------------------------
@@ -307,7 +318,7 @@ class DemoRobot:
 
         # Motor noise level
         # 0.01 means ±1 %
-        self.motor_noise_level = 0.01
+        self.motor_noise_level = 0.02
 
         # ------------------------------------------------------------
         # Autonomous route
@@ -320,7 +331,7 @@ class DemoRobot:
             ("stop", 240 * 0.5),
             ("forward", 240*6.5),
             ("stop", 240 * 0.5),
-            ("left", 240*1.51),
+            ("left", 240*1.55),
             ("stop", 240 * 0.5),
             ("forward", 240*13),
             ("stop", 240 * 0.5),
@@ -332,6 +343,15 @@ class DemoRobot:
 
         self.current_action_index = 0
         self.action_step = 0
+
+        # ------------------------------------------------------------
+        # Control mode
+        # ------------------------------------------------------------
+
+        # Available modes:
+        #   "autonomous" -> predefined route
+        #   "manual"     -> WASD control
+        self.control_mode = "autonomous"
 
         # ------------------------------------------------------------
         # LiDAR parameters
@@ -346,6 +366,9 @@ class DemoRobot:
 
         # Distance at which the robot should stop
         self.safety_distance = 1.5
+
+        # IDs used to update LiDAR debug lines efficiently.
+        self.lidar_debug_ids = [-1] * self.num_lidar_beams
 
         # ------------------------------------------------------------
         # Person detection
@@ -371,6 +394,8 @@ class DemoRobot:
 
         linear = 0.0
         angular = 0.0
+        if self.control_mode != "manual":
+            return
 
         # Forward
         if (
@@ -424,6 +449,38 @@ class DemoRobot:
 
             left_command = 0.0
             right_command = 0.0
+
+            p.setJointMotorControl2(
+                bodyUniqueId=self.agv_id,
+                jointIndex=self.left_wheel,
+                controlMode=p.VELOCITY_CONTROL,
+                targetVelocity=left_command,
+                force=self.motor_force
+            )
+
+            p.setJointMotorControl2(
+                bodyUniqueId=self.agv_id,
+                jointIndex=self.right_wheel,
+                controlMode=p.VELOCITY_CONTROL,
+                targetVelocity=right_command,
+                force=self.motor_force
+            )
+
+            return
+
+        # ------------------------------------------------------------
+        # Manual control mode
+        # ------------------------------------------------------------
+
+        if self.control_mode == "manual":
+
+            left_command = self.motor_noise(
+                self.left_speed
+            )
+
+            right_command = self.motor_noise(
+                self.right_speed
+            )
 
             p.setJointMotorControl2(
                 bodyUniqueId=self.agv_id,
@@ -578,6 +635,140 @@ class DemoRobot:
             angles
         )
 
+    # ----------------------------------------------------------------
+    # LiDAR debug visualisation
+    # ----------------------------------------------------------------
+
+    def draw_lidar_debug(self,distances,hit_ids,angles):
+        """
+        Visualise LiDAR rays attached to the robot.
+
+        The debug lines move automatically with the robot between
+        LiDAR updates because they are expressed in the robot's
+        local coordinate frame.
+
+        Red  = obstacle detected.
+        Blue = no obstacle detected within maximum range.
+        """
+
+        # ------------------------------------------------------------
+        # Current robot orientation
+        # ------------------------------------------------------------
+
+        _, robot_orn = (
+            p.getBasePositionAndOrientation(
+                self.agv_id
+            )
+        )
+
+        _, _, robot_yaw = (
+            p.getEulerFromQuaternion(
+                robot_orn
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Sensor origin in ROBOT coordinates
+        # ------------------------------------------------------------
+        #
+        # The lines are attached to the robot, so we do not use the
+        # global robot position here.
+        #
+        # The LiDAR sits 0.2 m above the robot base origin.
+
+        sensor_origin = [
+            0.0,
+            0.0,
+            0.2
+        ]
+
+        # ------------------------------------------------------------
+        # Draw / update every LiDAR beam
+        # ------------------------------------------------------------
+
+        for i, (
+            distance,
+            hit_id,
+            global_angle
+        ) in enumerate(
+            zip(
+                distances,
+                hit_ids,
+                angles
+            )
+        ):
+
+            # ray_cast_lidar() returns angles in GLOBAL coordinates.
+            #
+            # Because this debug line will be attached to the robot,
+            # convert the angle back into the robot's LOCAL frame.
+
+            local_angle = (
+                global_angle
+                - robot_yaw
+            )
+
+            end_point = [
+                math.cos(local_angle)
+                * distance,
+
+                math.sin(local_angle)
+                * distance,
+
+                0.2
+            ]
+
+            # --------------------------------------------------------
+            # Beam colour
+            # --------------------------------------------------------
+
+            if hit_id >= 0:
+
+                # Obstacle detected.
+                color = [
+                    1.0,
+                    0.0,
+                    0.0
+                ]
+
+            else:
+
+                # Maximum LiDAR range reached.
+                color = [
+                    0.0,
+                    0.4,
+                    1.0
+                ]
+
+            # --------------------------------------------------------
+            # Create or replace the same debug line
+            # --------------------------------------------------------
+
+            self.lidar_debug_ids[i] = (
+                p.addUserDebugLine(
+                    lineFromXYZ=sensor_origin,
+                    lineToXYZ=end_point,
+                    lineColorRGB=color,
+                    lineWidth=1.0,
+
+                    # Keep the line alive permanently.
+                    lifeTime=0,
+
+                    # Replace the existing beam rather than creating
+                    # a new debug object.
+                    replaceItemUniqueId=(
+                        self.lidar_debug_ids[i]
+                    ),
+
+                    # Attach the beam to the robot base.
+                    parentObjectUniqueId=(
+                        self.agv_id
+                    ),
+
+                    parentLinkIndex=-1
+                )
+            )
+
     def set_person_targets(self, person_ids):
         """
         Register multiple people as dynamic obstacles.
@@ -622,3 +813,19 @@ class DemoRobot:
         Add one person to the existing set of dynamic obstacles.
         """
         self.person_ids.add(person_id)
+
+    def set_control_mode(self, mode):
+        """
+        Select how the robot is controlled.
+
+        Available modes:
+            "autonomous"
+            "manual"
+        """
+
+        if mode not in ["autonomous", "manual"]:
+            raise ValueError(
+                "Control mode must be 'autonomous' or 'manual'"
+            )
+
+        self.control_mode = mode

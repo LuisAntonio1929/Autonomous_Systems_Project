@@ -1,4 +1,5 @@
 import numpy as np
+import pygame
 
 class ScanableMap:
   def __init__(self,map_dimensions=(100,100),fov=360,max_distance=100,num_rays=360,scale=10,draw_unit=10):
@@ -38,7 +39,7 @@ class ScanableMap:
   def scan(self,start_x,start_y,start_a):
     # Generate all angles at once
     # note that we take back half the fov, and add on the start angle of the robot
-    angles = np.linspace(-self.fov/2+start_a, self.fov/2+start_a, self.num_rays, endpoint=False) # +start_a 
+    angles = np.linspace(-self.fov/2+start_a, self.fov/2+start_a, self.num_rays, endpoint=True) # +start_a 
     
     dx = np.cos(angles)  # Shape: (num_rays,)
     dy = np.sin(angles)
